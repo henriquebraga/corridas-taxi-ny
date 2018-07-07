@@ -1,0 +1,127 @@
+---
+title: "Regressao Linear Simples"
+author: 
+date: "July 6, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Regressao Linear Quantidade de pessoas x KM
+
+Nos fizemos a seguinte pergunta: "Sera que existe uma correlacao entre quantidade de pessoas e quantidade de passageiros? (quanto mais passageiros, maior a distancia e percorrida."
+
+## Bibliotecas
+
+```{r bibliotecas}
+#install.packages("readr")
+library(readr)
+```
+## Leitura dos dados
+
+Caso nao tenha ainda carregado o dataset, execute a linha abaixo. Caso contrario, nao e necessario.
+
+```{r DataSet}
+dtTrain = read_csv("data/train.csv", locale = locale(encoding = "ISO-8859-1" ))
+```
+
+```{r distancia_km}
+Distancia_Haversine  <- function (lng1, lat1 , lng2, lat2)
+  {
+      rad <- pi/180
+      a1 <- lat1 * rad
+      a2 <- lng1 * rad
+      b1 <- lat2 * rad
+      b2 <- lng2 * rad
+      dlon <- b2 - a2
+      dlat <- b1 - a1
+      a <- (sin(dlat/2))^2 + cos(a1) * cos(b1) * (sin(dlon/2))^2
+      c <- 2 * atan2(sqrt(a), sqrt(1 - a))
+      R <- 6371 
+      d <- R * c
+      return(d)
+}
+
+Distancia_Manhattan  <- function  (lat1, lng1, lat2, lng2)
+  {
+      a = Distancia_Haversine(lat1, lng1, lat1, lng2)
+      b = Distancia_Haversine(lat1, lng1, lat2, lng1)
+      return (a + b)
+  }
+
+dtTrain$EuclidianaKM <- Distancia_Haversine( dtTrain$pickup_longitude, dtTrain$pickup_latitude , dtTrain$dropoff_longitude, dtTrain$dropoff_latitude )
+
+dtTrain$ManhattanKM <- Distancia_Manhattan( dtTrain$pickup_latitude,  dtTrain$pickup_longitude,  dtTrain$dropoff_latitude, dtTrain$dropoff_longitude )
+```
+
+
+A seguir poderemos observar que nao ha nenhuma correlacao entre a quantidade de passageiros e a distancia percorrida. Tambem reduzimos o dataset para rodar em menos tempo.
+
+```{r regressao_linear_qtde_passageiros_por_dist_euclidiana}
+dtTrain = head(dtTrain, n=100000)
+
+x <- dtTrain$passenger_count
+y <- dtTrain$EuclidianaKM
+
+regressao <-lm(x~y)
+
+plot(x~y)
+abline(regressao,lty=2)
+```
+
+Para confirmar isso, podemos verificar a correlaca entre as duas colunas no dataset. Poderemos observar que ha uma correlacao muito pequena entre as duas.
+
+```{r correlacao_entre_qtde_passageiros_distancia_euclid}
+cor(dtTrain$passenger_count, dtTrain$EuclidianaKM)
+```
+
+Uma correlacao obvia, porem para fins didaticos: distancias euclidiana e de manhattan, pois quanto maior uma, maior a outra, conforme podera ser observado.
+
+```{r regressao_linear_dist_manhattan_por_dist_euclidiana}
+dtTrain = head(dtTrain, n=100000)
+
+x <- dtTrain$ManhattanKM
+y <- dtTrain$EuclidianaKM
+
+regressao <-lm(x~y)
+
+plot(x~y, pch=16, col="blue", main="Distancia Manhattan x Distancia Euclidiana")
+abline(regressao,lty=2)
+```
+
+Podemos tambem verificar quem sao os outliers dentro do conjunto de dados. Dependendo, poderiamos normaliza-los caso fosse aplicado algum modelo baseado nestas variaveis.
+
+```{r outliers}
+par(mfrow=c(1, 2))
+boxplot(dtTrain$ManhattanKM, main="Distancia Manhattan", sub=paste("Outliers: ", boxplot.stats(dtTrain$EuclidianaKM)$out))
+boxplot(dtTrain$ManhattanKM, main="Distancia Euclidiana", sub=paste("Outliers: ", boxplot.stats(dtTrain$ManhattanKM)$out))
+```
+
+E neste caso, a correlacao entre as colunas sera muito proximo a 1, o que significa que ha uma forte correlacao entre elas.
+
+```{r correlacao_entre_distancias}
+cor(dtTrain$ManhattanKM, dtTrain$EuclidianaKM)
+```
+
+Podemos ate montar um modelo com uma assertividade de 95%. (porem sem utilidade pratica).
+```{r criando_treinamento}
+set.seed(100)
+training_indexes <- sample(1:nrow(dtTrain), 0.7 * nrow(dtTrain))
+training <- dtTrain[training_indexes, ]
+test <- dtTrain[-training_indexes, ]
+```
+
+
+```{r predicao_simples}
+model <- lm(EuclidianaKM ~ ManhattanKM ,data=training)
+prediction <- predict(model, test)
+```
+
+```{r acuracia_modelo}
+acuracia <- data.frame(cbind(actuals=test$EuclidianaKM, predicteds=prediction))
+correlation_accuracy <- cor(acuracia) 
+correlation_accuracy
+```
+

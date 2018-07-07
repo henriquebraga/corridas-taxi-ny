@@ -1,0 +1,141 @@
+---
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Processo de modelagem
+
+Constar a seleção das características Quais técnicas e transformações? 
+Redução, seleção, etc.
+
+Quais serão as variáveis de entrada do modelo?
+Quais serão as variáveis de saída?
+Como que o modelo será treinado e validado?
+
+Utilizaremos os dados de mapeamento dos quadrantes do processo de enriquecimento armazenados em `mapeamento.RData` (Rode o arquivo `enriquecimento.Rmd`)
+
+```{r }
+#install.packages("dplyr")
+#install.packages("plotly")
+#install.packages("plyr")
+#install.packages("tidyr")
+
+library(plyr)
+library(dplyr)
+library(plotly)
+library(tidyr)
+
+head(corridas.dentro, n=10)
+```
+
+Iremos dividir o dataset `mapa.quadrantes` em regiões as quais seus os quadrantes pertencem: Norte, Sul, Leste ou Oeste de Manhattan. 
+Estamos considerando o território de Manhattan com a latitude mínima de 40.70 e máxima de 40.82, e longitude mínima de -74.04 e máxima de -73.92.
+Dividiremos ainda estes limites ao meio e assim geraremos duas variaveis booleanas que indicam se o quadrante pertence ao norte ou sul e outra se ele pertence ao leste ou oeste.
+
+Definiremos como pertencentes a região norte todos os quadrantes entre as latitudes 40.76 e 40.82.
+Identificamos dos quadrantes de origem e destino.
+
+```{r }
+mapa.norte = mapa.quadrantes %>%
+    filter(x.down >= 40.76 & x.top < 40.82)
+mapa.norte = mutate(mapa.norte, isNorte = T)
+
+mapa.sul = anti_join(mapa.quadrantes, mapa.norte)
+mapa.sul = mutate(mapa.sul, isNorte = F) 
+
+mapa.predicao = full_join(mapa.norte, mapa.sul) %>%
+  select(-x.down, -x.top, -x, -y)
+
+head(mapa.predicao, n=10)
+```
+
+Definiremos como pertencentes a região leste todos os quadrantes entre as longitudes -74.04 e -73.98.
+
+```{r }
+mapa.leste = mapa.predicao %>%
+  filter(y.left >= -74.04 & y.rigth < -73.98)
+mapa.leste = mutate(mapa.leste, isLeste = T)
+
+mapa.oeste = anti_join(mapa.predicao, mapa.leste)
+mapa.oeste = mutate(mapa.oeste, isLeste = F)
+
+mapa.longitude = full_join(mapa.leste, mapa.oeste)
+mapa.predicao = full_join(mapa.predicao, mapa.longitude) %>%
+  select( -y.left, -y.rigth)
+
+head(mapa.predicao, n=10)
+```
+
+## Explorando o dataset de treino
+
+Iremos analisar as informações que o dataset de treino nos diz sobre em que região se concentra mais os pontos de origem e destino.
+
+```{r }
+corridas = merge(corridas.dentro, mapa.predicao,  
+                 by.x = "pickup_quater", by.y = "quadrant")
+colnames(corridas)[length(corridas)-1] <- "is_pickup_north"
+colnames(corridas)[length(corridas)] <- "is_pickup_east"
+
+corridas = merge(corridas, mapa.predicao,  
+                 by.x = "dropoff_quater", by.y = "quadrant")
+colnames(corridas)[length(corridas)-1] <- "is_dropoff_north"
+colnames(corridas)[length(corridas)] <- "is_dropoff_east"
+
+head(corridas, n=10)
+```
+
+```{r }
+corridas.origem.norte <- corridas %>%
+  group_by(is_pickup_north) %>%
+  tally(sort = T) %>%
+  ungroup() %>%
+  arrange(desc(n))
+corridas.origem.norte
+
+corridas.origem.sul <- corridas %>%
+  group_by(is_pickup_east) %>%
+  tally(sort = T) %>%
+  ungroup() %>%
+  arrange(desc(n))
+corridas.origem.sul
+
+corridas.destino.norte <- corridas %>%
+  group_by(is_dropoff_north) %>%
+  tally(sort = T) %>%
+  ungroup() %>%
+  arrange(desc(n))
+corridas.destino.norte
+
+corridas.destino.sul <- corridas %>%
+  group_by(is_dropoff_east) %>%
+  tally(sort = T) %>%
+  ungroup() %>%
+  arrange(desc(n))
+corridas.destino.sul
+```
+
+O dataset de treino nos diz que há uma concentração bem maior de corridas com origem ao sul de Manhattan e uma quantidade equilibrada de partidas considerando leste e oeste. O mesmo é identificado sobre os pontos de destinos. Com isso percebemos mais uma vez que os pontos de origem e destinos são bem similares.
+
+## Predição - Corridas que terminam no Quadrante Leste
+
+```{r }
+set.seed(100)
+training_indexes <- sample(1:nrow(corridas), 0.7 * nrow(corridas))
+training <-  corridas[training_indexes, ]
+test <- corridas[-training_indexes, ]
+```
+
+```{r }
+modelo <- lm( is_pickup_east ~ pickup_x ,data=training)
+predicao <- predict(modelo, test)
+```
+
+```{r }
+acuracia <- data.frame(cbind(actuals=test$is_pickup_east, predicteds=predicao))
+acuracia_corelacao <- cor(acuracia) 
+acuracia_corelacao
+```
+

@@ -1,0 +1,59 @@
+---
+title: "Exploração Inicial"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Como ainda não conhecemos muitas informações sobre o dataset que iremos trabalhar, fizemos uma análise superficial.
+
+## Bibliotecas
+```{r}
+#install.packages('readr')
+library(readr)
+```
+
+## Leitura dos dados
+
+Caso não tenha ainda carregado o dataset, execute a linha abaixo. Caso contrário, não é necessário.
+
+```{r DataSet}
+dtTrain = read_csv("data/train.csv", locale = locale(encoding = "ISO-8859-1" ))
+```
+## Resumo do dataset
+
+Vamos fazer a análise mais básica possível do dataset. Pudemos verificar que são corridas de táxi num perído de 6 meses (pode-se visualizar isso pela menor e maior data)
+
+
+```{r sumario}
+summary(dtTrain)
+```
+
+```{r hist_passageiros}
+hist(dtTrain$passenger_count)
+```
+
+```{r hist_duracao}
+hist(dtTrain$trip_duration)
+```
+
+```{r hist_data_pedida_corrida}
+hist(dtTrain$pickup_datetime, breaks="days")
+hist(dtTrain$pickup_datetime, breaks="months")
+hist(dtTrain$pickup_datetime, breaks="hours")
+
+```
+
+## Insights iniciais
+
+Algumas análises não nos disseram muita coisa, mas obtemos algumas informações importantes do dataset.
+
+Baseado nos resultados acima:
+
+* A maioria das pessoas que pedem táxi estão sozinhas;
+* A maioria das pessoas percorrem distâncias curtas entre 2 e 3km
+
+
+Dado as análises iniciais, podemos começar a pensar melhor sobre o dataset em questão.

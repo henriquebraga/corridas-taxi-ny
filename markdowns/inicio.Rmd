@@ -1,0 +1,11 @@
+---
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Análises de corridas de táxi em Manhattan
+
+![New York City](./img/NY.jpg)

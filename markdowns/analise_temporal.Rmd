@@ -1,0 +1,97 @@
+---
+title: "Pedidos de corrida por tempo"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Bibliotecas
+```{r}
+#install.packages('readr')
+#install.packages('plotly')
+#install.packages('dplyr')
+library(readr)
+library(plotly)
+
+```
+
+## Leitura dos dados
+
+Caso não tenha ainda carregado o dataset, execute a linha abaixo. Caso contrário, não é necessário.
+
+```{r DataSet}
+dtTrain = read_csv("data/train.csv", locale = locale(encoding = "ISO-8859-1" ))
+```
+
+
+## Analise de pedidos de corrida por hora
+
+Uma coisa que nos perguntamos foi: 
+
+1) Quais são os horários em que mais há pedidas de corrida durante o dia?
+2) Quais são os horários em que mais há pedidas de corrida dado uma latitude/longitude?
+
+Para isso, obtemos o horário de cada corrida e plotamos:
+
+```{r analise_por_hora}
+
+dtTrain$hour <- substr(dtTrain$pickup_datetime, 12, 13)
+plot_ly(x=~as.integer(dtTrain$hour), type='histogram')
+```
+
+Notamos que ha uma grande concentracao de pedidos de corrida entre as 18 e 20h, podendo estar relacionado com a saida do trabalho.
+
+Para a resposta da segunda pergunta, fizemos abaixo:
+
+```{r analise_por_hora_com_latitude_longitude}
+#Agrupando por horario, latitude e longitude
+  dtTrain_hour = dtTrain %>%
+  filter(pickup_longitude > -74.03 & pickup_longitude < -73.92 ) %>%
+  filter(pickup_latitude > 40.7 & pickup_latitude < 40.82 ) %>%
+  group_by(hour = as.numeric(hour), lat=round(pickup_latitude, digits=3), long=round(pickup_longitude, digits=3)) %>%
+  summarise(total_qty = n())
+
+#Pode-se agora verificar em quais horários cada ponto de latitude/longitude tem mais pedidos de corrida
+View(dtTrain_hour)
+
+plot(x = dtTrain_hour[2:3] , type = "p", xlab="Latitude", ylab="Longitude",cex=.4)
+matrix_by_hour_and_position = data.matrix(dtTrain_hour)
+
+plot_ly(z = matrix_by_hour_and_position) %>% add_surface()
+
+#Para plotar, podera fazer um plot em 3D para cada horário, assim teríamos uma ideia melhor visualmente.
+View(dtTrain_hour)
+```
+
+
+
+## Analise de pedidos de corrida dia x noite
+
+Outra pergunta que fizemos e a diferença entre dia x noite. Observamos que até às 18h, ou seja: dia, temos pedidos de corrida levemente maiores.
+
+```{r analise_dia_noite}
+dtTrain$is_night <- 1
+dtTrain$is_night[as.integer(dtTrain$hour) > 6 & as.integer(dtTrain$hour) < 18] <- 0
+plot_ly(x=dtTrain$is_night, type='histogram')
+```
+
+
+```{r analise_dia_noite_com_latitude_longitude}
+
+#Agrupando por horario, latitude e longitude
+  dtTrain_day_night = dtTrain %>%
+  group_by(is_night=dtTrain$is_night, lat=round(pickup_latitude, digits=3), long=round(pickup_longitude, digits=3)) %>%
+  summarise(total_qty = n())
+
+
+View(dtTrain_day_night)
+
+plot(x = dtTrain_day_night[2:3] , type = "p", xlab="Latitude", ylab="Longitude",cex=.4)
+matrix_by_hour_and_position = data.matrix(dtTrain_day_night)
+plot_ly(z = matrix_by_hour_and_position) %>% add_surface()
+
+View(dtTrain_day_night)
+```
+

@@ -1,0 +1,94 @@
+---
+title: "concentracao_pedidas_corrida"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+## Análise Exploratória: Maior concentração de pedidas de corrida e mapa de calor
+
+Consideramos interessante a seguinte pergunta: "Quais são os pontos de maior concentração de pedidas de corrida?"
+
+Para fazer a análise, reduzimos o dataset por questões de performance focamos nos pontos de maiores de concentração (latitude / longitude) sem que perdemos informações importantes sobre a análise do dataset.
+
+Além disso, agrupamos  em 3 dígitos para ter uma área maior para melhor entender os pontos de interesse.
+
+Os pontos em vermelho indicam a maior quantidade de pedidas de corrida.
+
+## Leitura dos dados
+
+Caso não tenha ainda carregado o dataset, execute a linha abaixo. Caso contrário, não é necessário.
+
+```{r DateSet}
+dtTrain = read_csv("data/train.csv", locale = locale(encoding = "ISO-8859-1" ))
+summary(dtTrain)
+
+```
+
+## Bibliotecas
+```{r Bibliotecas}
+#install.packages("dplyr")
+#install.packages("readr")
+#install.packages("ggmap")
+#install.packages("rgl")
+#install.packages("manipulate")
+
+library("readr")
+library("dplyr")
+library("ggmap")
+library("rgl")
+library("manipulate")
+```
+
+
+## DataSet reduzido e agrupado por latitude/longitude (arredondamento de 5 casas decimais para melhor agrupamento)
+```{r Agrupa DataSet}
+  dtTrainTOP = head(dtTrain, n=1458644) 
+
+  dtTrainTOP = head(dtTrain, n=1000000) #1458644
+
+  dtTrainTOP %>%
+    filter(pickup_longitude > -74.03 & pickup_longitude < -73.92 ) %>%
+    filter(pickup_latitude > 40.7 & pickup_latitude < 40.82 ) %>%
+    group_by(round(pickup_longitude, digits = 3) , round(pickup_latitude, digits = 3)) %>%
+    summarise(pickup_qtde = n()) ->  dtTrainTOP_GroupBy
+
+  
+  dtTrainTOP_GroupBy$Color = "black"
+  
+  dtTrainTOP_GroupBy$Color[dtTrainTOP_GroupBy$pickup_qtde > 1 ] = "yellow" 
+  dtTrainTOP_GroupBy$Color[dtTrainTOP_GroupBy$pickup_qtde > 10 ] = "orange" 
+  dtTrainTOP_GroupBy$Color[dtTrainTOP_GroupBy$pickup_qtde > 30 ] = "red" 
+  dtTrainTOP_GroupBy$Color[dtTrainTOP_GroupBy$pickup_qtde > 50 ] = "brown" 
+  
+  dtTrainTOP_GroupBy$Tamanho = 0.3
+  dtTrainTOP_GroupBy$Tamanho[dtTrainTOP_GroupBy$pickup_qtde > 1 ] = 0.5
+  dtTrainTOP_GroupBy$Tamanho[dtTrainTOP_GroupBy$pickup_qtde > 2 ] = 0.75 
+  dtTrainTOP_GroupBy$Tamanho[dtTrainTOP_GroupBy$pickup_qtde > 3 ] = 1
+  
+```
+
+
+## Análise Exploratória: Maior concentração de pedidas de corrida e mapa de calor
+```{r ExpPickUp}
+plot(dtTrainTOP_GroupBy[1:2] , type = "p", xlab="Latitude", ylab="Longitude", cex=dtTrainTOP_GroupBy$Tamanho, col=dtTrainTOP_GroupBy$Color, pch=16) 
+
+plot3d( dtTrainTOP_GroupBy[1:3] , cex=.4, col=dtTrainTOP_GroupBy$Color, xlab = "Latitude", ylab = "Longitude", zlab = "Qtde") 
+rglwidget()
+
+
+```
+
+
+***Analise Exploratoria PickUp***
+```{r ExpPickUp_2}
+plot(dtTrainTOP_GroupBy[1:2] , type = "p", xlab="Latitude", ylab="Longitude", cex=.4, col=dtTrainTOP_GroupBy$Color) 
+
+plot3d( dtTrainTOP_GroupBy[1:3] , cex=.4, col=dtTrainTOP_GroupBy$Color, xlab = "Latitude", ylab = "Longitude", zlab = "Qtde") 
+rglwidget()
+
+```

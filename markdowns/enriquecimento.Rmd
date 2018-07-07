@@ -1,0 +1,410 @@
+---
+title: "Enriquecimento"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Enriquecimento de dados
+
+Consideramos que poderiamos tirar algumas informações baseados nos dados que o dataset possuía para entender melhor o dataset.
+
+## Bibliotecas
+```{r libs}
+#install.packages("shinydashboard")
+#install.packages("dplyr")
+#install.packages("ggmap")
+#install.packages("manipulate")
+#install.packages("plotly")
+#install.packages("plyr")
+#install.packages("readr")
+#install.packages("rgl")
+#install.packages("tidyr")
+
+library(ggmap)
+library(manipulate)
+library(readr)
+library(rgl)
+library(plyr)
+library(dplyr)
+library(plotly)
+library(tidyr)
+rm(list = ls())
+```
+
+
+## Leitura dos dados
+
+Caso nao tenha ainda carregado o dataset, execute a linha abaixo. Caso contrario, nao e necessario.
+
+```{r DateSet}
+dtTrain = read_csv("data/train.csv", locale = locale(encoding = "ISO-8859-1" ))
+summary(dtTrain)
+```
+
+
+## Distancia Haversine e Manhattan
+
+As funcoes abaixo servem para enriquecer o dataframe com os dados em `km` para distância euclidiana (uma reta entre pontos) e manhattan baseado nas latitudes e longitudes.
+
+```{r Funcoes}
+Distancia_Haversine  <- function (lng1, lat1 , lng2, lat2)
+  {
+      rad <- pi/180
+      a1 <- lat1 * rad
+      a2 <- lng1 * rad
+      b1 <- lat2 * rad
+      b2 <- lng2 * rad
+      dlon <- b2 - a2
+      dlat <- b1 - a1
+      a <- (sin(dlat/2))^2 + cos(a1) * cos(b1) * (sin(dlon/2))^2
+      c <- 2 * atan2(sqrt(a), sqrt(1 - a))
+      R <- 6371 
+      d <- R * c
+      return(d)
+  }
+
+Distancia_Manhattan  <- function  (lat1, lng1, lat2, lng2)
+  {
+      a = Distancia_Haversine(lat1, lng1, lat1, lng2)
+      b = Distancia_Haversine(lat1, lng1, lat2, lng1)
+      return (a + b)
+  }
+```
+
+
+```{r distancia_enriquecimento}
+    
+    dtTrain$ManhattanKM <- Distancia_Manhattan( dtTrain$pickup_latitude,  dtTrain$pickup_longitude,  dtTrain$dropoff_latitude, dtTrain$dropoff_longitude )
+    
+    dtTrain$EuclidianaKM <- Distancia_Haversine( dtTrain$pickup_longitude, dtTrain$pickup_latitude , dtTrain$dropoff_longitude, dtTrain$dropoff_latitude )
+```
+
+## Dias da semana
+
+```{r semana_enriquecimento}
+   dtTrain$WeekDay <- as.numeric(format(dtTrain$pickup_datetime, format = "%u"))
+```
+
+## Horarios
+
+```{r horario_enriquecimento}
+    dtTrain$hour <- as.numeric(substr(dtTrain$pickup_datetime, 12, 13))
+```
+
+Visualizando os registros para verificar como ficou o dataset:
+```{r dados}
+    head(dtTrain, n=10)
+```
+
+## Mapeamento Manhattan em quadrantes 
+
+Definidando coordenadas limites da área de NY a ser estudada, no caso Manhattan.
+
+```{r }
+cfg <- list(x.min =  40.70, x.max =  40.82, y.step = 0.002,
+            y.min = -74.04, y.max = -73.92, x.step = 0.002)
+
+cfg$x.lim <- seq( from = cfg$x.min, to = cfg$x.max, by = cfg$x.step)
+cfg$y.lim <- seq( from = cfg$y.min, to = cfg$y.max, by = cfg$y.step)
+cfg$x.qtde <- length(cfg$x.lim) -1
+cfg$y.qtde <- length(cfg$y.lim) -1
+cfg$all.qtde <- cfg$x.qtde * cfg$y.qtde
+cfg$x <- seq_len(cfg$x.qtde)
+cfg$y <- seq_len(cfg$y.qtde)
+```
+
+Atribuindo nomeclatura generica aos quadrantes.
+
+```{r }
+cfg$all <- paste0('q', seq_len(cfg$all.qtde))
+names(cfg$all) <- cfg$all
+
+mapa <- matrix(data=cfg$all, nrow = cfg$y.qtde)
+colnames(mapa) <- cfg$x
+row.names(mapa) <- cfg$y
+```
+
+Definindo coordenadas de limites de cada quadrante.
+
+```{r }
+mapa.quadrantes <- data.frame(names=cfg$all, row.names = cfg$all)
+mapa.quadrantes <- mutate(mapa.quadrantes,
+                    x = rep(cfg$x, each=60),
+                    y = rep(cfg$y, 60),
+                    x.down = rep( cfg$x.lim[1:60], each=60),
+                    x.top = rep( cfg$x.lim[2:61], each=60),
+                    y.left = rep( cfg$y.lim[1:60], 60),
+                    y.rigth = rep( cfg$y.lim[2:61], 60))
+colnames(mapa.quadrantes)[1] <- "quadrant"
+
+head(mapa.quadrantes)
+mapa[10:1, 1:10]
+```
+
+## Mapeando endereços conhecidos da ilha no mapa de quadrantes.
+
+Foram usados três datasets como base de locais a serem identificados no mapa de quadrantes.
+
+  1. Estações de metrô - 956 locais dentro do território de Manhattan
+  2. Bares e restaurantes - 318 locais dentro do território de Manhattan
+  3. Teatros - 115 locais dentro do território de Manhattan
+
+```{r }
+bares.e.restaurantes = read.csv('./data/bares-e-restaurantes.csv')
+bares.e.restaurantes = mutate(bares.e.restaurantes,
+                              Local = as.character(bares.e.restaurantes$Local),
+                              Nome = as.character(bares.e.restaurantes$Nome),
+                              Logradouro = as.character(bares.e.restaurantes$Logradouro),
+                              Latitude = as.numeric(as.character(bares.e.restaurantes$Latitude)),
+                              Longitude = as.numeric(as.character(bares.e.restaurantes$Longitude))) 
+bares.e.restaurantes = bares.e.restaurantes %>%
+  filter(Latitude >= 40.70 & Latitude < 40.82 & Longitude >= -74.04 & Longitude < -73.92)
+
+estacoes.metro = read.csv('./data/estacoes-metro.csv')
+estacoes.metro = mutate(estacoes.metro,
+                 Local = as.character(estacoes.metro$Local),
+                 Nome = as.character(estacoes.metro$Nome),
+                 Logradouro = as.character(estacoes.metro$Logradouro),
+                 Latitude = as.numeric(as.character(estacoes.metro$Latitude)),
+                 Longitude = as.numeric(as.character(estacoes.metro$Longitude)))
+estacoes.metro = estacoes.metro %>%
+  filter(Latitude >= 40.70 & Latitude < 40.82 & Longitude >= -74.04 & Longitude < -73.92)
+
+teatros = read.csv('./data/teatros.csv')
+teatros = mutate(teatros,
+          Nome = as.character(teatros$Nome),
+          Logradouro = as.character(teatros$Logradouro),
+          Latitude = as.numeric(as.character(teatros$Latitude)),
+          Longitude = as.numeric(as.character(teatros$Longitude)))
+teatros = teatros %>%
+  filter(Latitude >= 40.70 & Latitude < 40.82 & Longitude >= -74.04 & Longitude < -73.92)
+
+#Unindo os pontos de interesse em um Ãºnico dataset
+pontosInteresse = full_join(bares.e.restaurantes, estacoes.metro)
+pontosInteresse = full_join(pontosInteresse, teatros)
+
+#Identifica a qual quadrante pertence cada ponto de interesse
+locais = merge(mapa.quadrantes, pontosInteresse) %>% 
+  filter(Latitude >= x.down & Latitude < x.top & Longitude >= y.left & Longitude < y.rigth) %>% 
+  select(-Latitude, -Longitude)
+
+#Enriquece mapa com idetificação dos pontos existentes nos quadrantes
+mapa.locais = unique(left_join(mapa.quadrantes, locais))
+```
+
+Função para buscar locais de um quadrante.
+```{r }
+buscar.locais <- function(quadrante) {
+  locais.do.quadrante = mapa.locais %>% 
+    filter(quadrante == quadrant) %>% 
+    select(Local, Nome)
+  locais.do.quadrante 
+}
+```
+
+## Corridas de táxi
+
+Enriquecendo dataset de corridas com os pontos de origens e destinos.
+Devido a questões de desempenho e após alguns testes demonstrarem que uma versão do dataset reduzida com apenas 1000 registros possibilitam análises similares ao dataset completo.
+
+```{r }
+corridas.taxi = head(dtTrain, n=1000)
+```
+
+Enriquecendo corridas com a identificação dos quadrantes dos pontos de origem.
+
+```{r }
+corridas.locais.origens = corridas.taxi %>%
+  filter(pickup_latitude >= 40.70 & pickup_latitude < 40.82 & pickup_longitude >= -74.04 & pickup_longitude < -73.92)
+
+corridas.locais.origens = merge(corridas.locais.origens, mapa.quadrantes) %>%
+  filter(pickup_latitude >= x.down & pickup_latitude < x.top & pickup_longitude >= y.left & pickup_longitude < y.rigth) %>%
+  select(-x.down, -x.top, -y.left, -y.rigth)
+
+colnames(corridas.locais.origens)[length(corridas.locais.origens)-2] <- "pickup_quater"
+colnames(corridas.locais.origens)[length(corridas.locais.origens)-1] <- "pickup_x"
+colnames(corridas.locais.origens)[length(corridas.locais.origens)] <- "pickup_y"
+
+corridas.locais.origens = left_join(corridas.taxi, corridas.locais.origens)
+```
+
+Enriquecendo corridas com a identificação dos quadrantes dos pontos de destino.
+
+```{r }
+corridas.locais.destinos = corridas.taxi %>% 
+  filter(dropoff_latitude >= 40.70 & dropoff_latitude < 40.82 & dropoff_longitude >= -74.04 & dropoff_longitude < -73.92)
+
+corridas.locais.destinos = merge(corridas.locais.destinos, mapa.quadrantes) %>% 
+  filter(dropoff_latitude >= x.down & dropoff_latitude < x.top & dropoff_longitude >= y.left & dropoff_longitude < y.rigth) %>%
+  select(-x.down, -x.top, -y.left, -y.rigth)
+
+colnames(corridas.locais.destinos)[length(corridas.locais.destinos)-2] <- "dropoff_quater"
+colnames(corridas.locais.destinos)[length(corridas.locais.origens)-1] <- "dropoff_x"
+colnames(corridas.locais.destinos)[length(corridas.locais.destinos)] <- "dropoff_y"
+
+corridas.locais.destinos = left_join(corridas.taxi, corridas.locais.destinos)
+```
+
+Juntando as informações de origem e destino em um mesmo dataset.
+
+```{r }
+corridas.locais = full_join(corridas.locais.origens, corridas.locais.destinos)
+```
+
+## Algumas informações sobre as corridas
+
+Identificamos a partir do dataset geral de corridas de Nova Iorque quantas corridas ocorrem em Manhattan.
+
+### Quantas corridas tem origem em Manhattan e destino fora?
+
+```{r }
+corridas.destino.fora = corridas.locais %>%
+  filter(!is.na(pickup_quater) & is.na(dropoff_quater))
+
+sprintf('%f corridas tem origem em Manhattan e destino fora', nrow(corridas.destino.fora) )
+```
+### Quantas corridas tem origem fora e destino em Manhattan?
+
+```{r }
+corridas.origem.fora = corridas.locais %>%
+  filter(is.na(pickup_quater) & !is.na(dropoff_quater))
+
+sprintf('%f corridas tem origem fora e destino em Manhattan', nrow(corridas.origem.fora) )
+```
+### Quantas corridas começam e terminam dentro de Manhattan?
+
+```{r }
+corridas.dentro = corridas.locais %>%
+  filter(!is.na(pickup_quater) & !is.na(dropoff_quater))
+
+sprintf('%f corridas tem origem em Manhattan e destino fora', nrow(corridas.dentro) )
+```
+### Quantas corridas estão fora do território de Manhattan?
+
+```{r }
+corridas.fora = corridas.locais %>%
+  filter(is.na(pickup_quater) & is.na(dropoff_quater))
+
+sprintf('%f corridas tem origem em Manhattan e destino fora', nrow(corridas.fora) )
+```
+
+Percebemos que a maioria das corrida iniciam e terminam dentro do território de Manhattan.
+Uma quantidade parecida de corridas que ocorrem fora dos limites de Manhattan e de corridas que tem Manhattan como destino.
+E perbemos que o número de corridas que partem de Manhattan, mas tem o seu destino fora é maior do que os que começam fora e terminam dentro de Manhattan.
+
+##Análise de locais de origem:
+
+Uma corrida parte de um quadrante de origem, que pode ter mais de um local. Sendo assim, analisamos os quadrantes de origens mais comuns dentre as corridas, e os locais relacionados a estes quadrantes.
+
+```{r }
+top.5.origens <- corridas.dentro %>%
+  group_by(pickup_quater) %>%
+  tally(sort = T) %>%
+  ungroup() %>%
+  arrange(desc(n)) %>%
+  head()
+top.5.origens
+
+top.5.destinos <- corridas.dentro %>%
+  group_by(dropoff_quater) %>%
+  tally(sort = T) %>%
+  ungroup() %>%
+  arrange(desc(n)) %>%
+  head()
+top.5.destinos
+```
+
+A partir dos quadrantes top 5 de origem e destino, encontramos os locais de partida e de destinos mais comuns das corridas, que como demonstrado também nas análises gráficas são pontos que coincidem.
+
+```{r }
+locais.top.quater.origem = top.5.origens$pickup_quater[4]
+locais.top.quater.origem = buscar.locais(locais.top.quater.origem)
+locais.top.quater.origem
+
+locais.top.quater.destino = top.5.destinos$dropoff_quater[1]
+locais.top.quater.destino = buscar.locais(locais.top.quater.destino)
+locais.top.quater.destino
+```
+
+
+No exemplo abaixo vemos um quadrante que possui alta frequancia como ponto de origem, e podemos idenficar que os locais relacionados são cafés, restaurantes, um polo de alimentação.
+
+```{r }
+locais.top.quater.origem = top.5.origens$pickup_quater[5]
+locais.top.quater.origem = buscar.locais(locais.top.quater.origem)
+locais.top.quater.origem
+```
+
+## Rotas das corridas
+
+```{r }
+buscar.quadrante <- function(x.quadrante, y.quadrante) {
+  quadrante = mapa.quadrantes %>%
+    filter(x == x.quadrante & y == y.quadrante) %>%
+    select(quadrant)
+}
+
+buscar.rota <- function(x.origem, y.origem, x.destino, y.destino) {
+  q.origem = buscar.quadrante(x.origem, y.origem)
+  rota = q.origem
+
+  x.aux = x.origem
+  if (x.origem < x.destino){
+    x.aux = x.aux + 1
+  } else if (x.origem > x.destino){
+    x.aux = x.aux - 1
+  }
+  for (x in x.aux:x.destino){
+    rota = full_join(rota, buscar.quadrante(x, y.origem))
+  }
+    
+  y.aux = y.origem
+  if (y.origem < y.destino){
+    y.aux = y.aux + 1
+  } else if (y.origem > y.destino){
+    y.aux = y.aux - 1
+  }
+  for (y in y.aux:y.destino){
+    rota = full_join(rota, buscar.quadrante(x.destino, y))
+  }
+
+  rota
+}
+
+buscar.rota.por.corrida.id <- function(corridas, corrida.id) {
+  corrida = corridas %>% 
+    filter(id == corrida.id)
+  
+    rota.corrida = buscar.rota(corrida$pickup_x, corrida$pickup_y, corrida$dropoff_x, corrida$dropoff_y)
+    rota.corrida = mutate(rota.corrida, id = corrida$id)
+    colnames(rota.corrida)[length(rota.corrida)-1] <- "rota"
+    
+    rota.corrida
+}
+```
+
+E como temos a rota, podemos verificar os locais intermediarios que uma corrida possivelmente passou para chegar ao seu destino.
+
+```{r }
+buscar.locais.por.corrida.id <- function(corridas, corrida.id) {
+  rota.corrida = buscar.rota.por.corrida.id(corridas, corrida.id)
+  locais.rota = buscar.locais(rota.corrida$rota[1])
+
+  for (r in 2:length(rota.corrida$rota)) {
+    locais.rota = full_join(locais.rota, buscar.locais(rota.corrida$rota[r]))
+  }
+  
+  locais.rota
+}
+
+```
+
+No exemplo abaixo podemos perceber que o ponto de partida da corrida é proximo a um teatro, e a rota segue próxima a várias estações de metrô.
+
+```{r }
+#Exemplo
+buscar.locais.por.corrida.id(corridas.dentro, 'id2875421')
+```
